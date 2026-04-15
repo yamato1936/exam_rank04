@@ -1,173 +1,70 @@
 #include <stdio.h>
-#include <stdlib.h>    // MODIFIED: use <stdlib.h> for calloc/free instead of <malloc.h>
+#include <stdlib.h>
 #include <ctype.h>
 
-typedef struct node {
-    enum {
-        ADD,
-        MULTI,
-        VAL
-    }   type;
-    int val;
-    struct node *l;
-    struct node *r;
-}   node;
-
-node    *new_node(node n)
-{
-    node *ret = calloc(1, sizeof(*ret));  // MODIFIED: use sizeof(*ret) instead of sizeof(n)
-    if (!ret)
-        return (NULL);
-    *ret = n;
-    return (ret);
+void unexpected(char c) {
+    if (c) printf("Unexpected token '%c'\n", c);
+    else printf("Unexpected end of input\n");
+    exit(1); // エラー時はすぐ終了してOK
 }
 
-void    destroy_tree(node *n)
-{
-    if (!n)
-        return ;
-    if (n->type != VAL)
-    {
-        destroy_tree(n->l);
-        destroy_tree(n->r);
-    }
-    free(n);
-}
-
-void    unexpected(char c)
-{
-    if (c)
-        printf("Unexpected token '%c'\n", c);
-    else
-        printf("Unexpected end of input\n");
-}
-
-int accept(char **s, char c)
-{
-    if (**s == c)
-    {
+int accept(char **s, char c) {
+    if (**s == c) {
         (*s)++;
-        return (1);
+        return 1;
     }
-    return (0);
+    return 0;
 }
 
-int expect(char **s, char c)
-{
-    if (accept(s, c))
-        return (1);
-    unexpected(**s);
-    return (0);
+void expect(char **s, char c) {
+    if (!accept(s, c)) unexpected(**s);
 }
 
-// ADDED: declarations of recursive parsing functions
-static node *parse_expr_r(char **s);
-static node *parse_term   (char **s);
-static node *parse_factor (char **s);
+// 関数のプロトタイプ宣言
+int parse_expr(char **s);
 
-// ADDED: parsing of a factor (digit or parenthesis)
-static node *parse_factor(char **s)
-{
-    if (isdigit((unsigned char)**s)) {
-        node n = { .type = VAL, .val = **s - '0', .l = NULL, .r = NULL };
+// 1. 数字とカッコの処理
+int parse_factor(char **s) {
+    if (isdigit(**s)) {
+        int val = **s - '0';
         (*s)++;
-        return new_node(n);
+        return val;
     }
     if (accept(s, '(')) {
-        node *e = parse_expr_r(s);
-        if (!e)
-            return NULL;
-        if (!expect(s, ')')) {
-            destroy_tree(e);
-            return NULL;
-        }
-        return e;
+        int val = parse_expr(s); // カッコの中は新しい式として計算
+        expect(s, ')');
+        return val;
     }
     unexpected(**s);
-    return NULL;
+    return 0;
 }
 
-// ADDED: parsing of a term (multiplications)
-// This function is a COPY-PASTE of parse_expr_r,
-// you just have to REPLACE '+' by '*'
-// and REPLACE .type = ADD by .type = MULTI
-// and REPLACE parse_term by parse_factor
-static node *parse_term(char **s)
-{
-    node *left = parse_factor(s);
-    if (!left)
-        return NULL;
+// 2. 掛け算の処理
+int parse_term(char **s) {
+    int val = parse_factor(s);
     while (accept(s, '*')) {
-        node *right = parse_factor(s);
-        if (!right) {
-            destroy_tree(left);
-            return NULL;
-        }
-        node n = { .type = MULTI, .l = left, .r = right };
-        left = new_node(n);
-        if (!left)
-            return NULL;
+        val *= parse_factor(s); // その場で掛け算
     }
-    return left;
+    return val;
 }
 
-// ADDED: parsing of an expression (additions)
-static node *parse_expr_r(char **s)
-{
-    node *left = parse_term(s);
-    if (!left)
-        return NULL;
+// 3. 足し算の処理
+int parse_expr(char **s) {
+    int val = parse_term(s);
     while (accept(s, '+')) {
-        node *right = parse_term(s);
-        if (!right) {
-            destroy_tree(left);
-            return NULL;
-        }
-        node n = { .type = ADD, .l = left, .r = right };
-        left = new_node(n);
-        if (!left)
-            return NULL;
+        val += parse_term(s); // その場で足し算
     }
-    return left;
+    return val;
 }
 
-// MODIFIED: parse_expr initializes a local pointer and checks the end of the string
-node *parse_expr(char *s)
-{
-    char *p = s;
-    node *ret = parse_expr_r(&p);
-    if (!ret)
-        return NULL;
-    if (*p) {                          
-        unexpected(*p);
-        destroy_tree(ret);
-        return (NULL);
-    }
-    return (ret);
-}
-
-int eval_tree(node *tree)
-{
-    switch (tree->type)
-    {
-        case ADD:
-            return (eval_tree(tree->l) + eval_tree(tree->r));
-        case MULTI:
-            return (eval_tree(tree->l) * eval_tree(tree->r));
-        case VAL:
-            return (tree->val);
-    }
-    return 0;  //MODIFIED: added return to suppress compiler warning
-}
-
-int main(int argc, char **argv)
-{
-    if (argc != 2)
-        return (1);
-    node *tree = parse_expr(argv[1]);
-    if (!tree)
-        return (1);
-    printf("%d\n", eval_tree(tree));
-    destroy_tree(tree);
-    return 0; // MODIFIED: return 0 on success
+int main(int argc, char **argv) {
+    if (argc != 2) return 1;
+    char *s = argv[1];
+    
+    int result = parse_expr(&s); // 式を計算
+    
+    if (*s) unexpected(*s);      // 最後に余計な文字が残っていないかチェック
+    
+    printf("%d\n", result);
+    return 0;
 }

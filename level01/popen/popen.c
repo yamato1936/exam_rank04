@@ -1,84 +1,45 @@
-#include <unistd.h>     // pipe, fork, dup2, execvp, close
-#include <stdlib.h>     // exit
-#include <sys/types.h>  // pid_t
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/types.h>
 
 int ft_popen(const char *file, char *const argv[], char type)
 {
-    int     fd[2];
-    pid_t   pid;
+    int fd[2];
+    pid_t pid;
 
-    // basic validation of parameters
-    if (!file || !argv || !argv[0] || (type != 'r' && type != 'w'))
-        return (-1);
-    if (pipe(fd) == -1)
-        return (-1);
+    // 1. 引数チェックとパイプ作成
+    if (!file || !argv || !argv[0] || (type != 'r' && type != 'w')) return -1;
+    if (pipe(fd) == -1) return -1;
 
+    // 2. forkでプロセスを分ける
     pid = fork();
-    if (pid < 0) // fork failed
-    {
+    if (pid < 0) {
         close(fd[0]);
         close(fd[1]);
-        return (-1);
+        return -1;
     }
-    if (pid == 0) // child process
-    {
-        if (type == 'r')
-        {
-            // connect child's stdout to pipe write end 
-            if (dup2(fd[1], STDOUT_FILENO) == -1)
-            {
-                close(fd[0]);
-                close(fd[1]);
-                exit(1);
-            }
-        }
-        else // type == 'w'
-        {
-            // connect child's stdin to pipe read end 
-            if (dup2(fd[0], STDIN_FILENO) == -1)
-            {
-                close(fd[0]);
-                close(fd[1]);
-                exit(1);
-            }
-        }
-        // we don't need pipe fds anymore in the child 
+
+    // 3. 子プロセスの処理 (コマンドの実行)
+    if (pid == 0) {
+        if (type == 'r') 
+            dup2(fd[1], 1); // コマンドの出力(1)をパイプの書き込み口に繋ぐ
+        else 
+            dup2(fd[0], 0); // コマンドの入力(0)をパイプの読み込み口に繋ぐ
+        
+        // 繋ぎ終わったら元のパイプは両方閉じる
         close(fd[0]);
         close(fd[1]);
-
+        
         execvp(file, argv);
-        exit(1); // if execvp failed
+        exit(1); // execvpが失敗した場合
     }
 
-    // parent process 
-    if (type == 'r')
-    {
-        // parent will read from fd[0], so close write end 
-        close(fd[1]);
-        return (fd[0]);
-    }
-    else // type == 'w'
-    {
-        // parent will write to fd[1], so close read end 
-        close(fd[0]);
-        return (fd[1]);
+    // 4. 親プロセスの処理 (ファイルディスクリプタを返す)
+    if (type == 'r') {
+        close(fd[1]); // 親は読み込むだけなので書き込み口を閉じる
+        return fd[0]; // 読み込み口を返す
+    } else {
+        close(fd[0]); // 親は書き込むだけなので読み込み口を閉じる
+        return fd[1]; // 書き込み口を返す
     }
 }
-
-#pragma region Test code
-
-// Variant from subject without get_next_line and ft_putstr
-int main(void)
-{
-    int  fd;
-    char c;
-
-    fd = ft_popen("ls", (char *const[]){"ls", NULL}, 'r');
-    if (fd < 0)
-        return (1);
-    while (read(fd, &c, 1) > 0)
-        write(1, &c, 1);
-    close(fd);
-    return (0);
-}
-#pragma endregion
